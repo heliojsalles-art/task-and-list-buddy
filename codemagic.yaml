@@ -1,0 +1,94 @@
+workflows:
+  build-ios-organiza:
+    name: Build iOS Organiza
+    instance_type: mac_mini_m2
+    environment:
+      node: 20
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install and Build Web
+        script: |
+          npm install
+          npm install @capacitor/core @capacitor/cli @capacitor/ios
+          npm run build
+      - name: Capacitor Setup
+        script: |
+          WEB_DIR="dist"
+          [ ! -d "dist" ] && WEB_DIR="."
+          cat <<EOF > capacitor.config.json
+          {
+            "appId": "com.salles.organiza",
+            "appName": "Organiza",
+            "webDir": "$WEB_DIR"
+          }
+          EOF
+          rm -rf ios
+          npx cap add ios || true
+      - name: Update App Icons
+        script: |
+          ICON_DEST="ios/App/App/Assets.xcassets/AppIcon.appiconset"
+          mkdir -p "$ICON_DEST"
+          # Tenta buscar o icone na pasta Assets (Maiúsculo) ou assets (minúsculo)
+          if [ -f "Assets/icon.png" ]; then
+            cp Assets/icon.png "$ICON_DEST/AppIcon-1024x1024@1x.png"
+            echo "Ícone copiado de Assets/"
+          elif [ -f "assets/icon.png" ]; then
+            cp assets/icon.png "$ICON_DEST/AppIcon-1024x1024@1x.png"
+            echo "Ícone copiado de assets/"
+          fi
+          # Cria o Contents.json essencial para o Xcode reconhecer a imagem
+          cat <<EOF > "$ICON_DEST/Contents.json"
+          {
+            "images": [
+              {
+                "size": "1024x1024",
+                "idiom": "ios-marketing",
+                "filename": "AppIcon-1024x1024@1x.png",
+                "scale": "1x"
+              }
+            ],
+            "info": {
+              "version": 1,
+              "author": "xcode"
+            }
+          }
+          EOF
+      - name: Fix and Install Pods
+        script: |
+          cd ios/App
+          # CORREÇÃO: Força o projeto do Xcode a usar iOS 15.0 em vez de 14.0
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 14.0/IPHONEOS_DEPLOYMENT_TARGET = 15.0/g' App.xcodeproj/project.pbxproj
+          # Configura o Podfile para iOS 15.0
+          echo "platform :ios, '15.0'
+          use_frameworks!
+          target 'App' do
+            pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
+            pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
+          end" > Podfile
+          pod update
+      - name: Xcode Build Unsigned
+        script: |
+          cd ios/App
+          xcodebuild build \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath ./output \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
+          # Empacotamento do arquivo IPA
+          mkdir -p Payload
+          APP_PATH=$(find ./output -name "App.app" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Erro: App.app não encontrado"
+            exit 1
+          fi
+          cp -R "$APP_PATH" Payload/
+          zip -r Organiza.ipa Payload
+          mv Organiza.ipa ../../
+    artifacts:
+      - "*.ipa"
