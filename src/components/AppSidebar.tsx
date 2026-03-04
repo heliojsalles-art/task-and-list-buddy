@@ -24,8 +24,8 @@ export function AppSidebar() {
   const location = useLocation();
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarContent>
+    <Sidebar collapsible="icon" className="border-r-0">
+      <SidebarContent className="glass-strong bg-transparent border-r border-border/30">
         <div className="p-4 pb-2">
           {!collapsed && (
             <h1 className="font-display text-xl font-bold tracking-tight text-foreground">
@@ -43,8 +43,8 @@ export function AppSidebar() {
                     <NavLink
                       to={item.url}
                       end
-                      className="hover:bg-accent/60"
-                      activeClassName="bg-accent text-accent-foreground font-medium"
+                      className="rounded-xl hover:bg-accent/40 transition-all duration-200"
+                      activeClassName="glass bg-accent/60 text-accent-foreground font-medium shadow-sm"
                     >
                       <item.icon className="mr-2 h-4 w-4" />
                       {!collapsed && <span>{item.title}</span>}

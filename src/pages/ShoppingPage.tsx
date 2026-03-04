@@ -30,10 +30,7 @@ export default function ShoppingPage() {
   const addList = () => {
     const name = newListName.trim();
     if (!name) return;
-    save([
-      ...lists,
-      { id: generateId(), name, items: [], createdAt: Date.now() },
-    ]);
+    save([...lists, { id: generateId(), name, items: [], createdAt: Date.now() }]);
     setNewListName("");
   };
 
@@ -50,13 +47,7 @@ export default function ShoppingPage() {
     save(
       lists.map((l) =>
         l.id === selected.id
-          ? {
-              ...l,
-              items: [
-                ...l.items,
-                { id: generateId(), text, done: false },
-              ],
-            }
+          ? { ...l, items: [...l.items, { id: generateId(), text, done: false }] }
           : l
       )
     );
@@ -68,12 +59,7 @@ export default function ShoppingPage() {
     save(
       lists.map((l) =>
         l.id === selected.id
-          ? {
-              ...l,
-              items: l.items.map((i) =>
-                i.id === itemId ? { ...i, done: !i.done } : i
-              ),
-            }
+          ? { ...l, items: l.items.map((i) => (i.id === itemId ? { ...i, done: !i.done } : i)) }
           : l
       )
     );
@@ -105,45 +91,21 @@ export default function ShoppingPage() {
           {current.name}
         </h1>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            addItem();
-          }}
-          className="flex gap-2 mb-6"
-        >
-          <Input
-            placeholder="Adicionar item..."
-            value={newItemText}
-            onChange={(e) => setNewItemText(e.target.value)}
-            className="flex-1"
-          />
-          <Button type="submit" size="icon">
-            <Plus className="h-4 w-4" />
-          </Button>
+        <form onSubmit={(e) => { e.preventDefault(); addItem(); }} className="flex gap-2 mb-6">
+          <Input placeholder="Adicionar item..." value={newItemText} onChange={(e) => setNewItemText(e.target.value)} className="flex-1" />
+          <Button type="submit" size="icon"><Plus className="h-4 w-4" /></Button>
         </form>
 
         <AnimatePresence mode="popLayout">
           {current.items.filter(i => !i.done).map((item) => (
             <motion.div
-              key={item.id}
-              layout
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="flex items-center gap-3 p-3 rounded-lg mb-2 bg-card border"
+              key={item.id} layout
+              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -20 }}
+              className="flex items-center gap-3 p-3 rounded-2xl mb-2 glass glass-highlight"
             >
-              <Checkbox
-                checked={item.done}
-                onCheckedChange={() => toggleItem(item.id)}
-              />
+              <Checkbox checked={item.done} onCheckedChange={() => toggleItem(item.id)} />
               <span className="flex-1 text-sm">{item.text}</span>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                onClick={() => removeItem(item.id)}
-              >
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeItem(item.id)}>
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </motion.div>
@@ -154,23 +116,10 @@ export default function ShoppingPage() {
           <>
             <p className="text-sm text-muted-foreground mt-4 mb-2">Feitos</p>
             {current.items.filter(i => i.done).map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center gap-3 p-3 rounded-lg mb-2 bg-card border opacity-60"
-              >
-                <Checkbox
-                  checked={item.done}
-                  onCheckedChange={() => toggleItem(item.id)}
-                />
-                <span className="flex-1 text-sm line-through text-muted-foreground">
-                  {item.text}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                  onClick={() => removeItem(item.id)}
-                >
+              <div key={item.id} className="flex items-center gap-3 p-3 rounded-2xl mb-2 glass-subtle opacity-60">
+                <Checkbox checked={item.done} onCheckedChange={() => toggleItem(item.id)} />
+                <span className="flex-1 text-sm line-through text-muted-foreground">{item.text}</span>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeItem(item.id)}>
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>
@@ -179,9 +128,7 @@ export default function ShoppingPage() {
         )}
 
         {current.items.length === 0 && (
-          <p className="text-center text-muted-foreground py-12">
-            Lista vazia. Adicione itens acima!
-          </p>
+          <p className="text-center text-muted-foreground py-12">Lista vazia. Adicione itens acima!</p>
         )}
       </div>
     );
@@ -191,35 +138,16 @@ export default function ShoppingPage() {
     <div className="max-w-xl mx-auto">
       <h1 className="text-2xl font-display font-bold mb-6">Listas de Compras</h1>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          addList();
-        }}
-        className="flex gap-2 mb-6"
-      >
-        <Input
-          placeholder="Nova lista (ex: Supermercado)..."
-          value={newListName}
-          onChange={(e) => setNewListName(e.target.value)}
-          className="flex-1"
-        />
-        <Button type="submit" size="icon">
-          <Plus className="h-4 w-4" />
-        </Button>
+      <form onSubmit={(e) => { e.preventDefault(); addList(); }} className="flex gap-2 mb-6">
+        <Input placeholder="Nova lista (ex: Supermercado)..." value={newListName} onChange={(e) => setNewListName(e.target.value)} className="flex-1" />
+        <Button type="submit" size="icon"><Plus className="h-4 w-4" /></Button>
       </form>
 
       <AnimatePresence mode="popLayout">
         {lists.map((list) => (
-          <motion.div
-            key={list.id}
-            layout
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-          >
+          <motion.div key={list.id} layout initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -20 }}>
             <Card
-              className="p-4 mb-3 cursor-pointer hover:shadow-md transition-shadow flex items-center justify-between group"
+              className="p-4 mb-3 cursor-pointer hover:shadow-lg transition-all duration-200 flex items-center justify-between group"
               onClick={() => setSelectedId(list.id)}
             >
               <div className="flex items-center gap-3">
@@ -228,21 +156,13 @@ export default function ShoppingPage() {
                   <p className="font-medium text-sm">{list.name}</p>
                   <p className="text-xs text-muted-foreground">
                     {list.items.length} {list.items.length === 1 ? "item" : "itens"}
-                    {list.items.filter(i => i.done).length > 0 &&
-                      ` · ${list.items.filter(i => i.done).length} feito(s)`}
+                    {list.items.filter(i => i.done).length > 0 && ` · ${list.items.filter(i => i.done).length} feito(s)`}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeList(list.id);
-                  }}
-                >
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => { e.stopPropagation(); removeList(list.id); }}>
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
@@ -253,9 +173,7 @@ export default function ShoppingPage() {
       </AnimatePresence>
 
       {lists.length === 0 && (
-        <p className="text-center text-muted-foreground py-12">
-          Nenhuma lista ainda. Crie uma acima!
-        </p>
+        <p className="text-center text-muted-foreground py-12">Nenhuma lista ainda. Crie uma acima!</p>
       )}
     </div>
   );
