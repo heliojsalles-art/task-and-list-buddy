@@ -17,7 +17,6 @@ export default function RemindersPage() {
 
   useEffect(() => {
     setReminders(getReminders());
-    // Check for expired every minute
     const interval = setInterval(() => setReminders(getReminders()), 60000);
     return () => clearInterval(interval);
   }, []);
@@ -129,7 +128,7 @@ function ReminderItem({
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -20 }}
-      className="flex items-center gap-3 p-3 rounded-lg mb-2 bg-card border hover:shadow-sm transition-shadow"
+      className="flex items-center gap-3 p-3 rounded-2xl mb-2 glass glass-highlight hover:shadow-md transition-all duration-200"
     >
       <Checkbox
         checked={reminder.done}
@@ -139,7 +138,7 @@ function ReminderItem({
         className={`flex-1 text-sm ${
           reminder.done
             ? "line-through text-muted-foreground"
-            : "text-card-foreground"
+            : "text-foreground"
         }`}
       >
         {reminder.text}
