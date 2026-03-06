@@ -12,21 +12,21 @@ workflows:
         APP_NAME: "Organiza"
         APP_ID: "com.salles.organiza"
         WEB_DIR: "dist"
-        IOS_MIN_VERSION: "16.0"
+        IOS_MIN_VERSION: "15.0"
 
     scripts:
-      - name: Install dependencies (npm install)
+      - name: Install dependencies
         script: |
           set -e
           npm install
 
-      - name: Build Web App (Vite)
+      - name: Build Web App
         script: |
           set -e
           npm run build
           ls -lah "${WEB_DIR}" || true
 
-      - name: Ensure Capacitor deps + base config
+      - name: Ensure Capacitor packages + config
         script: |
           set -e
           npm install @capacitor/core @capacitor/cli @capacitor/ios
@@ -45,16 +45,19 @@ workflows:
           }
           EOF
 
-      - name: Create iOS project (if missing) and set minimum iOS version
+      - name: Add iOS platform (do not fail build if pods fail here)
+        script: |
+          set -e
+          # cap add ios pode tentar pod install e falhar antes de você ajustar o target.
+          # então a gente NÃO deixa esse step derrubar o build.
+          if [ ! -d "ios" ]; then
+            npx cap add ios || true
+          fi
+
+      - name: Force minimum iOS deployment target (Podfile + Xcode project)
         script: |
           set -e
 
-          # cria ios se não existir
-          if [ ! -d "ios" ]; then
-            npx cap add ios
-          fi
-
-          # Ajusta o Podfile ANTES do sync (porque sync chama pod install)
           PODFILE="ios/App/Podfile"
           if [ -f "${PODFILE}" ]; then
             if grep -q "platform :ios" "${PODFILE}"; then
@@ -62,16 +65,19 @@ workflows:
             else
               sed -i '' "1s/^/platform :ios, '${IOS_MIN_VERSION}'\n/" "${PODFILE}"
             fi
+          else
+            echo "ERRO: Podfile não encontrado em ${PODFILE}"
+            find ios -maxdepth 3 -type f | head -n 100 || true
+            exit 1
           fi
 
-          # Também ajusta o deployment target no Xcode project (ajuda a evitar conflitos)
           PBXPROJ="ios/App/App.xcodeproj/project.pbxproj"
           if [ -f "${PBXPROJ}" ]; then
-            # troca qualquer IPHONEOS_DEPLOYMENT_TARGET existente para o mínimo desejado
+            # atualiza qualquer deployment target existente
             sed -i '' "s/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = ${IOS_MIN_VERSION};/g" "${PBXPROJ}" || true
           fi
 
-      - name: Capacitor sync iOS (now pods should work)
+      - name: Capacitor sync iOS (now pods should succeed)
         script: |
           set -e
           npx cap sync ios
@@ -110,6 +116,13 @@ workflows:
 
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent Payload "${APP_NAME}.ipa"
           rm -rf Payload
+
+      - name: Print artifact info
+        script: |
+          set -e
+          ls -lah *.ipa || true
+          du -h *.ipa || true
+          ls -lah ios/App/build || true
 
     artifacts:
       - "*.ipa"
