@@ -1,11 +1,17 @@
 workflows:
-  ios-build-unsigned:
-    name: iOS Unsigned IPA (for Sideloadly)
+  ios_sideloadly_unsigned:
+    name: iOS (Unsigned IPA + XCARCHIVE) - Sideloadly
+
+    # ✅ max_build_duration fica aqui (não dentro de environment)
+    max_build_duration: 60
 
     environment:
-      max_build_duration: 60
       xcode: latest
       node: 18
+
+      # Opcional: deixe assim caso use NPM (default)
+      vars:
+        APP_NAME: "Organiza"
 
     triggering:
       events:
@@ -14,18 +20,29 @@ workflows:
         - pattern: main
           include: true
 
-    scripts:
+    cache:
+      cache_paths:
+        - ~/.npm
+        - ios/App/Pods
+        - ios/App/Podfile.lock
 
-      - name: Install dependencies
+    scripts:
+      - name: Install dependencies (npm)
         script: |
-          npm install
+          # usa npm ci se existir package-lock, senão npm install
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Build Web App
         script: |
           npm run build
 
-      - name: Install Capacitor iOS
+      - name: Capacitor sync (iOS)
         script: |
+          # garante que ios existe, sem falhar se já existir
           npx cap add ios || true
           npx cap sync ios
 
@@ -35,10 +52,13 @@ workflows:
           pod install
           cd ../..
 
-      - name: Build iOS Archive (Unsigned)
+      - name: Xcode Archive (Unsigned)
         script: |
+          set -e
+
           cd ios/App
 
+          # Archive unsigned
           xcodebuild archive \
             -workspace App.xcworkspace \
             -scheme App \
@@ -47,18 +67,45 @@ workflows:
             -archivePath build/App.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_IDENTITY=""
+            CODE_SIGNING_IDENTITY="" \
+            | tee ../../xcodebuild-archive.log
 
           cd ../..
 
-      - name: Create IPA manually
+      - name: Create IPA manually (Unsigned)
         script: |
-          mkdir Payload
-          cp -R ios/App/build/App.xcarchive/Products/Applications/App.app Payload/Organiza.app
+          set -e
 
-          /usr/bin/zip -r Organiza.ipa Payload
+          # limpa empacotamento anterior
+          rm -rf Payload
+          rm -f "${APP_NAME}.ipa"
 
+          # cria estrutura correta do IPA
+          mkdir -p Payload
+
+          # copia .app do archive
+          cp -R ios/App/build/App.xcarchive/Products/Applications/App.app "Payload/${APP_NAME}.app"
+
+          # garante permissões básicas
+          chmod -R 755 "Payload/${APP_NAME}.app" || true
+
+          # cria IPA (zip do Payload)
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent Payload "${APP_NAME}.ipa"
+
+          # limpa pasta temporária
           rm -rf Payload
 
+      - name: Print artifact info
+        script: |
+          ls -lah *.ipa || true
+          du -h *.ipa || true
+          ls -lah ios/App/build || true
+
     artifacts:
-      - Organiza.ipa
+      # IPA final (para Sideloadly)
+      - "*.ipa"
+      # XCARCHIVE (útil pra debug / re-empacotar)
+      - "ios/App/build/*.xcarchive"
+      # logs
+      - "xcodebuild-archive.log"
+      - "ios/App/Podfile.lock"
