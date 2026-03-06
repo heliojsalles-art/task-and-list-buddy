@@ -1,58 +1,112 @@
-- name: Xcode Build Unsigned
-  script: |
-    cd ios/App
-    ARCHIVE_PATH="./output/App.xcarchive"
-    IPA_PATH="../../Organiza.ipa"
-    
-    # 1. Archive the build
-    xcodebuild archive \
-      -workspace App.xcworkspace \
-      -scheme App \
-      -configuration Release \
-      -destination generic/platform=iOS \
-      -archivePath "$ARCHIVE_PATH" \
-      SKIP_INSTALL=NO \
-      CODE_SIGNING_ALLOWED=NO \
-      CODE_SIGNING_REQUIRED=NO \
-      CODE_SIGNING_IDENTITY="" \
-      AD_HOC_CODE_SIGNING_ALLOWED=YES
+workflows:
+  build-ios-organiza:
+    name: Build iOS Organiza
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      node: 20
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install and Build Web
+        script: |
+          npm install
+          npm install @capacitor/core @capacitor/cli @capacitor/ios
+          npm run build
 
-    # Check if archive was successful
-    if [ ! -d "$ARCHIVE_PATH" ]; then
-      echo "Error: Xcode archive failed"
-      exit 1
-    fi
+      - name: Capacitor Setup
+        script: |
+          WEB_DIR="dist"
+          [ ! -d "dist" ] && WEB_DIR="."
+          cat <<EOF > capacitor.config.json
+          {
+            "appId": "com.salles.organiza",
+            "appName": "Organiza",
+            "webDir": "$WEB_DIR"
+          }
+          EOF
+          rm -rf ios
+          npx cap add ios
 
-    # 2. Export the archive to an IPA (using an Ad-Hoc ExportOptions plist for unsigned export)
-    # Create a minimal export options plist file on the fly
-    cat <<EOF > ExportOptions.plist
-    <?xml version="1.0" encoding="UTF-8"?>
-    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com">
-    <plist version="1.0">
-    <dict>
-      <key>method</key>
-      <string>ad-hoc</string>
-      <key>signingStyle</key>
-      <string>manual</string>
-      <key>stripSwiftSymbols</key>
-      <true/>
-      <key>uploadBitcode</key>
-      <false/>
-      <key>uploadSymbols</key>
-      <false/>
-    </dict>
-    </plist>
-    EOF
+      - name: Update App Icons
+        script: |
+          ICON_DEST="ios/App/App/Assets.xcassets/AppIcon.appiconset"
+          mkdir -p "$ICON_DEST"
+          if [ -f "Assets/icon.png" ]; then
+            cp Assets/icon.png "$ICON_DEST/AppIcon-1024x1024@1x.png"
+          elif [ -f "assets/icon.png" ]; then
+            cp assets/icon.png "$ICON_DEST/AppIcon-1024x1024@1x.png"
+          fi
+          cat <<EOF > "$ICON_DEST/Contents.json"
+          {
+            "images": [
+              {
+                "size": "1024x1024",
+                "idiom": "ios-marketing",
+                "filename": "AppIcon-1024x1024@1x.png",
+                "scale": "1x"
+              }
+            ],
+            "info": {
+              "version": 1,
+              "author": "xcode"
+            }
+          }
+          EOF
 
-    xcodebuild -exportArchive \
-      -archivePath "$ARCHIVE_PATH" \
-      -exportOptionsPlist ExportOptions.plist \
-      -exportPath "../.."
-    
-    # Check if IPA was created
-    if [ ! -f "$IPA_PATH" ]; then
-        echo "Error: IPA not created"
-        exit 1
-    fi
+      - name: Fix and Install Pods
+        script: |
+          cd ios/App
+          # Força o target para iOS 15.0
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 14.0/IPHONEOS_DEPLOYMENT_TARGET = 15.0/g' App.xcodeproj/project.pbxproj
+          echo "platform :ios, '15.0'
+          use_frameworks!
+          target 'App' do
+            pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
+            pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
+          end" > Podfile
+          pod update
 
-    echo "IPA successfully created at $IPA_PATH"
+      - name: Xcode Build Unsigned (Proper Archive)
+        script: |
+          cd ios/App
+          # Cria o arquivo de configuração para exportação sem assinatura
+          cat <<EOF > ExportOptions.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>ad-hoc</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>thinning</key>
+              <string>&lt;none&gt;</string>
+          </dict>
+          </plist>
+          EOF
+
+          # Gera o Archive do projeto
+          xcodebuild archive \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/App.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
+
+          # Exporta o Archive para IPA
+          xcodebuild -exportArchive \
+            -archivePath build/App.xcarchive \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath build/ \
+            CODE_SIGNING_ALLOWED=NO
+
+          # Move o IPA para a raiz para o Codemagic coletar
+          mv build/App.ipa ../../Organiza.ipa
+
+    artifacts:
+      - "*.ipa"
