@@ -1,92 +1,43 @@
 workflows:
-  build-ios-organiza:
-    name: Build iOS Organiza
-    instance_type: mac_mini_m2
-    max_build_duration: 60
+  ios-build-unsigned:
+    name: iOS Unsigned IPA (for Sideloadly)
+
     environment:
-      node: 20
+      max_build_duration: 60
       xcode: latest
-      cocoapods: default
+      node: 18
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+
     scripts:
-      - name: Install and Build Web
+
+      - name: Install dependencies
         script: |
           npm install
-          npm install @capacitor/core @capacitor/cli @capacitor/ios
+
+      - name: Build Web App
+        script: |
           npm run build
 
-      - name: Capacitor Setup
+      - name: Install Capacitor iOS
         script: |
-          WEB_DIR="dist"
-          [ ! -d "dist" ] && WEB_DIR="."
-          cat <<EOF > capacitor.config.json
-          {
-            "appId": "com.salles.organiza",
-            "appName": "Organiza",
-            "webDir": "$WEB_DIR"
-          }
-          EOF
-          rm -rf ios
-          # CAPACITOR_SKIP_PUNCH_INSTALL=1 pula o pod install automático do Capacitor
-          export CAPACITOR_SKIP_PUNCH_INSTALL=1
-          npx cap add ios
-          npx cap copy ios
+          npx cap add ios || true
+          npx cap sync ios
 
-      - name: Update App Icons
-        script: |
-          ICON_DEST="ios/App/App/Assets.xcassets/AppIcon.appiconset"
-          mkdir -p "$ICON_DEST"
-          if [ -f "Assets/icon.png" ]; then
-            cp Assets/icon.png "$ICON_DEST/AppIcon-1024x1024@1x.png"
-          elif [ -f "assets/icon.png" ]; then
-            cp assets/icon.png "$ICON_DEST/AppIcon-1024x1024@1x.png"
-          fi
-          cat <<EOF > "$ICON_DEST/Contents.json"
-          {
-            "images": [
-              {
-                "size": "1024x1024",
-                "idiom": "ios-marketing",
-                "filename": "AppIcon-1024x1024@1x.png",
-                "scale": "1x"
-              }
-            ],
-            "info": { "version": 1, "author": "xcode" }
-          }
-          EOF
-
-      - name: Fix and Install Pods
+      - name: Install CocoaPods
         script: |
           cd ios/App
-          # Ajusta o target para iOS 15.0 antes de rodar os Pods
-          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 14.0/IPHONEOS_DEPLOYMENT_TARGET = 15.0/g' App.xcodeproj/project.pbxproj
-          
-          echo "platform :ios, '15.0'
-          use_frameworks!
-          target 'App' do
-            pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
-            pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
-          end" > Podfile
-          
-          # Agora instalamos os pods com o target correto configurado
-          pod install --repo-update
+          pod install
+          cd ../..
 
-      - name: Xcode Build Unsigned (Archive & Export)
+      - name: Build iOS Archive (Unsigned)
         script: |
           cd ios/App
-          cat <<EOF > ExportOptions.plist
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>ad-hoc</string>
-              <key>signingStyle</key>
-              <string>manual</string>
-              <key>thinning</key>
-              <string>&lt;none&gt;</string>
-          </dict>
-          </plist>
-          EOF
 
           xcodebuild archive \
             -workspace App.xcworkspace \
@@ -96,16 +47,18 @@ workflows:
             -archivePath build/App.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_IDENTITY="" \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES
+            CODE_SIGNING_IDENTITY=""
 
-          xcodebuild -exportArchive \
-            -archivePath build/App.xcarchive \
-            -exportOptionsPlist ExportOptions.plist \
-            -exportPath build/ \
-            CODE_SIGNING_ALLOWED=NO
+          cd ../..
 
-          mv build/App.ipa ../../Organiza.ipa
+      - name: Create IPA manually
+        script: |
+          mkdir Payload
+          cp -R ios/App/build/App.xcarchive/Products/Applications/App.app Payload/Organiza.app
+
+          /usr/bin/zip -r Organiza.ipa Payload
+
+          rm -rf Payload
 
     artifacts:
-      - "*.ipa"
+      - Organiza.ipa
