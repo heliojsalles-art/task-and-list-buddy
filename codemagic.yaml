@@ -12,19 +12,7 @@ workflows:
         APP_NAME: "Organiza"
         APP_ID: "com.salles.organiza"
         WEB_DIR: "dist"
-
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: main
-          include: true
-
-    cache:
-      cache_paths:
-        - ~/.npm
-        - ios/App/Pods
-        - ios/App/Podfile.lock
+        IOS_MIN_VERSION: "16.0"
 
     scripts:
       - name: Install dependencies (npm install)
@@ -38,14 +26,11 @@ workflows:
           npm run build
           ls -lah "${WEB_DIR}" || true
 
-      - name: Ensure Capacitor deps + configure
+      - name: Ensure Capacitor deps + base config
         script: |
           set -e
-
-          # Garante Capacitor instalado (caso não esteja no package.json)
           npm install @capacitor/core @capacitor/cli @capacitor/ios
 
-          # Cria capacitor.config.json (usa dist por padrão, mas cai pra "." se não existir)
           if [ ! -d "${WEB_DIR}" ]; then
             echo "WARN: ${WEB_DIR} não existe. Usando webDir='.'"
             WEB_DIR="."
@@ -60,34 +45,36 @@ workflows:
           }
           EOF
 
-      - name: Capacitor sync iOS
+      - name: Create iOS project (if missing) and set minimum iOS version
         script: |
           set -e
 
-          # Cria iOS se não existir
+          # cria ios se não existir
           if [ ! -d "ios" ]; then
             npx cap add ios
           fi
 
-          npx cap sync ios
-
-      - name: CocoaPods install
-        script: |
-          set -e
-          cd ios/App
-
-          # Força iOS 15 no Podfile (evita warnings/erros de target baixo)
-          if [ -f "Podfile" ]; then
-            # Se já tiver platform :ios, ajusta; se não tiver, insere no topo.
-            if grep -q "platform :ios" Podfile; then
-              sed -i '' "s/platform :ios, '.*'/platform :ios, '15.0'/" Podfile
+          # Ajusta o Podfile ANTES do sync (porque sync chama pod install)
+          PODFILE="ios/App/Podfile"
+          if [ -f "${PODFILE}" ]; then
+            if grep -q "platform :ios" "${PODFILE}"; then
+              sed -i '' "s/platform :ios, '.*'/platform :ios, '${IOS_MIN_VERSION}'/" "${PODFILE}"
             else
-              sed -i '' "1s/^/platform :ios, '15.0'\n/" Podfile
+              sed -i '' "1s/^/platform :ios, '${IOS_MIN_VERSION}'\n/" "${PODFILE}"
             fi
           fi
 
-          pod install --repo-update
-          cd ../..
+          # Também ajusta o deployment target no Xcode project (ajuda a evitar conflitos)
+          PBXPROJ="ios/App/App.xcodeproj/project.pbxproj"
+          if [ -f "${PBXPROJ}" ]; then
+            # troca qualquer IPHONEOS_DEPLOYMENT_TARGET existente para o mínimo desejado
+            sed -i '' "s/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = ${IOS_MIN_VERSION};/g" "${PBXPROJ}" || true
+          fi
+
+      - name: Capacitor sync iOS (now pods should work)
+        script: |
+          set -e
+          npx cap sync ios
 
       - name: Xcode archive (unsigned)
         script: |
@@ -110,31 +97,19 @@ workflows:
       - name: Create IPA manually (unsigned, for Sideloadly)
         script: |
           set -e
-
           rm -rf Payload
           rm -f "${APP_NAME}.ipa"
 
           mkdir -p Payload
-
-          # Copia o .app do archive
           cp -R ios/App/build/App.xcarchive/Products/Applications/App.app "Payload/${APP_NAME}.app"
 
-          # Validação mínima: Info.plist precisa existir
           if [ ! -f "Payload/${APP_NAME}.app/Info.plist" ]; then
             echo "ERRO: Info.plist não encontrado dentro do .app. Archive inválido."
-            find Payload -maxdepth 3 -type f | head -n 50 || true
             exit 1
           fi
 
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent Payload "${APP_NAME}.ipa"
           rm -rf Payload
-
-      - name: Print artifact info
-        script: |
-          set -e
-          ls -lah *.ipa || true
-          du -h *.ipa || true
-          ls -lah ios/App/build || true
 
     artifacts:
       - "*.ipa"
