@@ -17,6 +17,7 @@ workflows:
       - name: Capacitor Setup
         script: |
           WEB_DIR="dist"
+          # Verifica se a pasta dist existe (padrão Vite/Lovable), senão usa a raiz
           [ ! -d "dist" ] && WEB_DIR="."
           cat <<EOF > capacitor.config.json
           {
@@ -26,7 +27,9 @@ workflows:
           }
           EOF
           rm -rf ios
-          npx cap add ios
+          # --no-update impede que o Capacitor tente rodar 'pod install' antes da hora
+          npx cap add ios --no-update
+          npx cap copy ios
 
       - name: Update App Icons
         script: |
@@ -57,20 +60,25 @@ workflows:
       - name: Fix and Install Pods
         script: |
           cd ios/App
-          # Força o target para iOS 15.0
+          # Atualiza o target do projeto Xcode para iOS 15.0 para compatibilidade
           sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 14.0/IPHONEOS_DEPLOYMENT_TARGET = 15.0/g' App.xcodeproj/project.pbxproj
+          
+          # Sobrescreve o Podfile com a versão correta
           echo "platform :ios, '15.0'
           use_frameworks!
           target 'App' do
             pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
             pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
           end" > Podfile
+          
+          # Agora o CocoaPods aceitará a instalação
           pod update
 
-      - name: Xcode Build Unsigned (Proper Archive)
+      - name: Xcode Build Unsigned (Archive & Export)
         script: |
           cd ios/App
-          # Cria o arquivo de configuração para exportação sem assinatura
+          
+          # Cria arquivo de opções para exportar IPA sem assinatura oficial
           cat <<EOF > ExportOptions.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com">
@@ -86,7 +94,7 @@ workflows:
           </plist>
           EOF
 
-          # Gera o Archive do projeto
+          # Gera o Archive (pacote completo do app)
           xcodebuild archive \
             -workspace App.xcworkspace \
             -scheme App \
@@ -98,14 +106,14 @@ workflows:
             CODE_SIGNING_IDENTITY="" \
             AD_HOC_CODE_SIGNING_ALLOWED=YES
 
-          # Exporta o Archive para IPA
+          # Exporta o Archive para o arquivo .ipa final
           xcodebuild -exportArchive \
             -archivePath build/App.xcarchive \
             -exportOptionsPlist ExportOptions.plist \
             -exportPath build/ \
             CODE_SIGNING_ALLOWED=NO
 
-          # Move o IPA para a raiz para o Codemagic coletar
+          # Move para a raiz para o Codemagic salvar como artefato
           mv build/App.ipa ../../Organiza.ipa
 
     artifacts:
