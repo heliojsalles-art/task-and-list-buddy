@@ -1,17 +1,17 @@
 workflows:
   ios_sideloadly_unsigned:
     name: iOS (Unsigned IPA + XCARCHIVE) - Sideloadly
-
-    # ✅ max_build_duration fica aqui (não dentro de environment)
+    instance_type: mac_mini_m2
     max_build_duration: 60
 
     environment:
       xcode: latest
+      cocoapods: default
       node: 18
-
-      # Opcional: deixe assim caso use NPM (default)
       vars:
         APP_NAME: "Organiza"
+        APP_ID: "com.salles.organiza"
+        WEB_DIR: "dist"
 
     triggering:
       events:
@@ -27,38 +27,73 @@ workflows:
         - ios/App/Podfile.lock
 
     scripts:
-      - name: Install dependencies (npm)
+      - name: Install dependencies (npm install)
         script: |
-          # usa npm ci se existir package-lock, senão npm install
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+          set -e
+          npm install
 
-      - name: Build Web App
+      - name: Build Web App (Vite)
         script: |
+          set -e
           npm run build
+          ls -lah "${WEB_DIR}" || true
 
-      - name: Capacitor sync (iOS)
-        script: |
-          # garante que ios existe, sem falhar se já existir
-          npx cap add ios || true
-          npx cap sync ios
-
-      - name: Install CocoaPods
-        script: |
-          cd ios/App
-          pod install
-          cd ../..
-
-      - name: Xcode Archive (Unsigned)
+      - name: Ensure Capacitor deps + configure
         script: |
           set -e
 
+          # Garante Capacitor instalado (caso não esteja no package.json)
+          npm install @capacitor/core @capacitor/cli @capacitor/ios
+
+          # Cria capacitor.config.json (usa dist por padrão, mas cai pra "." se não existir)
+          if [ ! -d "${WEB_DIR}" ]; then
+            echo "WARN: ${WEB_DIR} não existe. Usando webDir='.'"
+            WEB_DIR="."
+          fi
+
+          cat > capacitor.config.json <<EOF
+          {
+            "appId": "${APP_ID}",
+            "appName": "${APP_NAME}",
+            "webDir": "${WEB_DIR}",
+            "bundledWebRuntime": false
+          }
+          EOF
+
+      - name: Capacitor sync iOS
+        script: |
+          set -e
+
+          # Cria iOS se não existir
+          if [ ! -d "ios" ]; then
+            npx cap add ios
+          fi
+
+          npx cap sync ios
+
+      - name: CocoaPods install
+        script: |
+          set -e
           cd ios/App
 
-          # Archive unsigned
+          # Força iOS 15 no Podfile (evita warnings/erros de target baixo)
+          if [ -f "Podfile" ]; then
+            # Se já tiver platform :ios, ajusta; se não tiver, insere no topo.
+            if grep -q "platform :ios" Podfile; then
+              sed -i '' "s/platform :ios, '.*'/platform :ios, '15.0'/" Podfile
+            else
+              sed -i '' "1s/^/platform :ios, '15.0'\n/" Podfile
+            fi
+          fi
+
+          pod install --repo-update
+          cd ../..
+
+      - name: Xcode archive (unsigned)
+        script: |
+          set -e
+          cd ios/App
+
           xcodebuild archive \
             -workspace App.xcworkspace \
             -scheme App \
@@ -72,40 +107,37 @@ workflows:
 
           cd ../..
 
-      - name: Create IPA manually (Unsigned)
+      - name: Create IPA manually (unsigned, for Sideloadly)
         script: |
           set -e
 
-          # limpa empacotamento anterior
           rm -rf Payload
           rm -f "${APP_NAME}.ipa"
 
-          # cria estrutura correta do IPA
           mkdir -p Payload
 
-          # copia .app do archive
+          # Copia o .app do archive
           cp -R ios/App/build/App.xcarchive/Products/Applications/App.app "Payload/${APP_NAME}.app"
 
-          # garante permissões básicas
-          chmod -R 755 "Payload/${APP_NAME}.app" || true
+          # Validação mínima: Info.plist precisa existir
+          if [ ! -f "Payload/${APP_NAME}.app/Info.plist" ]; then
+            echo "ERRO: Info.plist não encontrado dentro do .app. Archive inválido."
+            find Payload -maxdepth 3 -type f | head -n 50 || true
+            exit 1
+          fi
 
-          # cria IPA (zip do Payload)
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent Payload "${APP_NAME}.ipa"
-
-          # limpa pasta temporária
           rm -rf Payload
 
       - name: Print artifact info
         script: |
+          set -e
           ls -lah *.ipa || true
           du -h *.ipa || true
           ls -lah ios/App/build || true
 
     artifacts:
-      # IPA final (para Sideloadly)
       - "*.ipa"
-      # XCARCHIVE (útil pra debug / re-empacotar)
       - "ios/App/build/*.xcarchive"
-      # logs
       - "xcodebuild-archive.log"
       - "ios/App/Podfile.lock"
